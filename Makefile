@@ -6,7 +6,7 @@ CARGO_MANIFEST := $(CLI_REPO)/Cargo.toml
 APPLE_CRATE_MANIFEST := $(CLI_REPO)/crates/smbcloud-auth-sdk-apple/Cargo.toml
 BINDGEN := $(CLI_REPO)/target/release/uniffi-bindgen
 
-RUST_STABLE ?= +1.92.0
+RUST_STABLE ?= +$(shell sed -n 's/^channel = "\(.*\)"/\1/p' "$(CLI_REPO)/rust-toolchain.toml" | head -n 1)
 RUST_NIGHTLY ?= +nightly
 
 IOS_DEPLOYMENT_TARGET ?= 16.0
