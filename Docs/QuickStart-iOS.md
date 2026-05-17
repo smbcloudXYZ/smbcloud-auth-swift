@@ -1,10 +1,6 @@
 # Quick Start — iOS
 
-This guide shows the hosted smbCloud Auth flow for an iPhone or iPad app using:
-
-- `SmbCloudWebAuth`
-- `SmbCloudCredentialsManager`
-- `SmbCloudUserInfoClient`
+This guide shows the hosted smbCloud Auth flow for an iPhone or iPad app using `SmbCloudWebAuth` and `SmbCloudCredentialsManager`.
 
 ## 1. Add the package
 
@@ -12,7 +8,7 @@ Add `https://github.com/smbcloudXYZ/smbcloud-auth-swift` in Xcode or Swift Packa
 
 ## 2. Register a callback URL scheme
 
-Your app needs a custom callback URL such as:
+Your app needs a callback URL such as:
 
 - `myapp://auth/callback`
 
@@ -34,14 +30,23 @@ final class AuthenticationStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var isLoading = false
 
-    private let webAuth = try! SmbCloudWebAuth(
-        domain: "api.smbcloud.xyz",
-        clientId: "YOUR_PUBLIC_CLIENT_ID",
-        redirectURL: URL(string: "myapp://auth/callback")!
-    )
+    private let webAuth: SmbCloudWebAuth?
     private let credentialsManager = SmbCloudCredentialsManager(
         service: "com.example.myapp.smbcloud-auth"
     )
+
+    init() {
+        do {
+            self.webAuth = try SmbCloudWebAuth(
+                domain: "api.smbcloud.xyz",
+                clientId: "YOUR_PUBLIC_CLIENT_ID",
+                redirectURL: URL(string: "myapp://auth/callback")!
+            )
+        } catch {
+            self.webAuth = nil
+            self.errorMessage = error.localizedDescription
+        }
+    }
 
     func restoreSession() {
         do {
@@ -52,6 +57,11 @@ final class AuthenticationStore: ObservableObject {
     }
 
     func signIn(anchor: @escaping () -> SmbCloudPresentationAnchor) async {
+        guard let webAuth else {
+            errorMessage = errorMessage ?? "The smbCloud web auth client could not be created."
+            return
+        }
+
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -72,7 +82,7 @@ final class AuthenticationStore: ObservableObject {
 
     func signOut() {
         do {
-            try webAuth.clearSession(credentialsManager: credentialsManager)
+            try webAuth?.clearSession(credentialsManager: credentialsManager)
             session = nil
             email = nil
             errorMessage = nil
@@ -108,14 +118,15 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            if let session = authStore.session {
+            if let email = authStore.email {
+                Text("Signed in as \(email)")
+            } else if authStore.session != nil {
                 Text("Signed in")
-                Text(session.accessToken)
-                    .font(.footnote.monospaced())
-                    .lineLimit(2)
-                if let email = authStore.email {
-                    Text(email)
-                }
+            } else {
+                Text("Signed out")
+            }
+
+            if authStore.session != nil {
                 Button("Sign Out") {
                     authStore.signOut()
                 }
@@ -154,6 +165,7 @@ struct ContentView: View {
 ## Notes
 
 - Prefer an explicit Keychain `service` value per app.
+- Do not show or log raw access tokens in production UI.
 - `logout()` currently clears local stored credentials. It does not revoke tokens remotely.
 - Hosted web login requires `ASWebAuthenticationSession`, so use iOS 16+.
 - If your product needs native email/password forms, send those credentials to your backend or BFF instead of embedding confidential credentials in the app.
@@ -162,4 +174,3 @@ struct ContentView: View {
 
 - `Docs/QuickStart-macOS.md`
 - `Docs/Migration-From-Proxy-Native-Forms.md`
-- `SECURITY.md`

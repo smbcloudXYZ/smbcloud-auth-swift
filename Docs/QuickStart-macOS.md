@@ -1,6 +1,6 @@
 # Quick Start — macOS
 
-This guide shows hosted smbCloud Auth in a macOS app using `SmbCloudWebAuth`.
+This guide shows hosted smbCloud Auth in a macOS app using `SmbCloudWebAuth` and `SmbCloudCredentialsManager`.
 
 ## 1. Add the package
 
@@ -8,7 +8,7 @@ Add `https://github.com/smbcloudXYZ/smbcloud-auth-swift` to your macOS app.
 
 ## 2. Configure a callback URL
 
-Use a custom callback URL such as:
+Use a callback URL such as:
 
 - `mymacapp://auth/callback`
 
@@ -27,14 +27,23 @@ final class AuthenticationStore: ObservableObject {
     @Published private(set) var email: String?
     @Published private(set) var errorMessage: String?
 
-    private let webAuth = try! SmbCloudWebAuth(
-        domain: "api.smbcloud.xyz",
-        clientId: "YOUR_PUBLIC_CLIENT_ID",
-        redirectURL: URL(string: "mymacapp://auth/callback")!
-    )
+    private let webAuth: SmbCloudWebAuth?
     private let credentialsManager = SmbCloudCredentialsManager(
         service: "com.example.mymacapp.smbcloud-auth"
     )
+
+    init() {
+        do {
+            self.webAuth = try SmbCloudWebAuth(
+                domain: "api.smbcloud.xyz",
+                clientId: "YOUR_PUBLIC_CLIENT_ID",
+                redirectURL: URL(string: "mymacapp://auth/callback")!
+            )
+        } catch {
+            self.webAuth = nil
+            self.errorMessage = error.localizedDescription
+        }
+    }
 
     func restoreSession() {
         do {
@@ -45,6 +54,11 @@ final class AuthenticationStore: ObservableObject {
     }
 
     func signIn() async {
+        guard let webAuth else {
+            errorMessage = errorMessage ?? "The smbCloud web auth client could not be created."
+            return
+        }
+
         do {
             let session = try await webAuth.login(
                 presentationAnchorProvider: {
@@ -53,6 +67,7 @@ final class AuthenticationStore: ObservableObject {
                 credentialsManager: credentialsManager
             )
             self.session = session
+
             let user = try await webAuth.userInfo(session: session)
             email = user.email
         } catch {
@@ -62,7 +77,7 @@ final class AuthenticationStore: ObservableObject {
 
     func signOut() {
         do {
-            try webAuth.clearSession(credentialsManager: credentialsManager)
+            try webAuth?.clearSession(credentialsManager: credentialsManager)
             session = nil
             email = nil
         } catch {
@@ -121,7 +136,9 @@ struct ContentView: View {
 ## Notes
 
 - Supply a real public client ID from smbCloud Auth.
+- Use an explicit Keychain `service` value for your app.
 - Do not ship an `app_secret` in the macOS app.
+- Do not show or log raw access tokens in production UI.
 - `clearSession()` and `logout()` currently clear local stored credentials only.
 - If you need native email/password forms, keep confidential auth credentials on your backend.
 
@@ -129,4 +146,3 @@ struct ContentView: View {
 
 - `Docs/QuickStart-iOS.md`
 - `Docs/Migration-From-Proxy-Native-Forms.md`
-- `SECURITY.md`

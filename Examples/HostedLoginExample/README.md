@@ -24,7 +24,7 @@ Before using the example, replace:
 
 ## Build locally
 
-```/dev/null/bash.txt#L1-L1
+```bash
 swift build --package-path Examples/HostedLoginExample
 ```
 

@@ -38,7 +38,7 @@ That covers:
 
 Create and push a semver tag:
 
-```/dev/null/bash.txt#L1-L2
+```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
@@ -57,7 +57,7 @@ You can also run the `Release` workflow manually and provide a tag such as `v1.0
 
 Before tagging, run:
 
-```/dev/null/bash.txt#L1-L2
+```bash
 make verify
 make verify-apple-destinations
 ```
@@ -66,7 +66,7 @@ make verify-apple-destinations
 
 If you are working alongside `smbcloud-cli`, you can generate the optional local UniFFI/XCFramework layer with:
 
-```/dev/null/bash.txt#L1-L4
+```bash
 make ios
 make macos
 make tvos

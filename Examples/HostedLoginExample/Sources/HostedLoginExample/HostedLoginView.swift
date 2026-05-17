@@ -22,12 +22,6 @@ struct HostedLoginView: View {
                     .font(.headline)
             }
 
-            if let session = authenticationStore.session {
-                Text(session.accessToken)
-                    .font(.footnote.monospaced())
-                    .lineLimit(2)
-            }
-
             HStack {
                 Button(authenticationStore.isLoading ? "Loading…" : "Continue with smbCloud") {
                     Task {

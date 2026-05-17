@@ -75,6 +75,47 @@ final class SmbCloudAuthTests: XCTestCase {
         }
     }
 
+    func testHttpLoopbackDomainIsAllowed() {
+        XCTAssertNoThrow(
+            try SmbCloudWebAuth(
+                domain: "http://localhost:8088",
+                clientId: "public-client-id",
+                redirectURL: URL(string: "myapp://auth/callback")!
+            )
+        )
+        XCTAssertNoThrow(try SmbCloudUserInfoClient(domain: "http://127.0.0.1:8088"))
+    }
+
+    func testHttpRemoteDomainThrowsInvalidBaseUrlError() {
+        XCTAssertThrowsError(try SmbCloudUserInfoClient(domain: "http://api.smbcloud.xyz")) {
+            error in
+            guard case SmbCloudClientError.invalidBaseURL = error else {
+                return XCTFail("Expected invalidBaseURL error, got: \(error)")
+            }
+        }
+
+        XCTAssertThrowsError(
+            try SmbCloudWebAuth(
+                domain: "http://api.smbcloud.xyz",
+                clientId: "public-client-id",
+                redirectURL: URL(string: "myapp://auth/callback")!
+            )
+        ) { error in
+            guard case SmbCloudClientError.invalidBaseURL = error else {
+                return XCTFail("Expected invalidBaseURL error, got: \(error)")
+            }
+        }
+    }
+
+    func testStateMismatchErrorDescriptionDoesNotExposeStateValues() {
+        let error = SmbCloudClientError.stateMismatch(
+            expected: "expected-state",
+            received: "received-state"
+        )
+
+        XCTAssertEqual(error.errorDescription, "The callback state did not match.")
+    }
+
     func testDefaultScopesMatchOidcDefaults() {
         XCTAssertEqual(SmbCloudWebAuth.defaultScopes, ["openid", "profile", "email"])
     }
