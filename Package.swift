@@ -2,55 +2,76 @@
 import Foundation
 import PackageDescription
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SmbCloudAuth Swift SDK
-//
-// Local development: run `make ios` (or another platform target) to build
-// SmbCloudAuthFramework.xcframework from the Rust source.  When the local
-// framework directory exists, SwiftPM links it directly.
-//
-// Distribution: consumers add this package via its Git URL.  Without the local
-// framework on disk, SwiftPM downloads the pre-built zip from GitHub Releases.
-// ─────────────────────────────────────────────────────────────────────────────
-
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-let localFrameworkPath = "SmbCloudAuthFramework.xcframework"
+let fileManager = FileManager.default
+
+let localFrameworkPath = "smbcloud_authFFI.xcframework"
 let localFrameworkAbsolutePath = packageRoot.appendingPathComponent(localFrameworkPath).path
+let localFfiMarkerPath = packageRoot.appendingPathComponent(".local/use-local-ffi").path
+let ffiSwiftShimPath = packageRoot.appendingPathComponent(
+    "Sources/SmbCloudAuthFFI/smbcloud_auth.swift"
+).path
 
-// Update these two values when cutting a new release.
-let releaseFrameworkURL =
-    "https://github.com/smbcloudXYZ/smbcloud-auth-swift/releases/download/0.4.1/SmbCloudAuthFramework.xcframework.zip"
-let releaseFrameworkChecksum =
-    "0000000000000000000000000000000000000000000000000000000000000000"
+let shouldEnableLocalFfi =
+    fileManager.fileExists(atPath: localFfiMarkerPath)
+    && fileManager.fileExists(atPath: localFrameworkAbsolutePath)
+    && fileManager.fileExists(atPath: ffiSwiftShimPath)
 
-let smbCloudAuthFrameworkTarget: Target
-if FileManager.default.fileExists(atPath: localFrameworkAbsolutePath) {
-    smbCloudAuthFrameworkTarget = .binaryTarget(
-        name: "SmbCloudAuthFramework",
-        path: localFrameworkPath
+let targets: [Target] = {
+    var targets: [Target] = [
+        .target(
+            name: "SmbCloudAuth",
+            path: "Sources/SmbCloudAuth"
+        )
+    ]
+
+    if shouldEnableLocalFfi {
+        targets.append(
+            .binaryTarget(
+                name: "smbcloud_authFFI",
+                path: localFrameworkPath
+            )
+        )
+
+        targets.append(
+            .target(
+                name: "SmbCloudAuthFFI",
+                dependencies: [.target(name: "smbcloud_authFFI")],
+                path: "Sources/SmbCloudAuthFFI"
+            )
+        )
+    }
+
+    targets.append(
+        .testTarget(
+            name: "SmbCloudAuthTests",
+            dependencies: ["SmbCloudAuth"],
+            path: "Tests/SmbCloudAuthTests"
+        )
     )
-} else {
-    smbCloudAuthFrameworkTarget = .binaryTarget(
-        name: "SmbCloudAuthFramework",
-        url: releaseFrameworkURL,
-        checksum: releaseFrameworkChecksum
-    )
-}
+
+    return targets
+}()
+
+let products: [Product] = {
+    var products: [Product] = [
+        .library(name: "SmbCloudAuth", targets: ["SmbCloudAuth"])
+    ]
+
+    if shouldEnableLocalFfi {
+        products.append(
+            .library(name: "SmbCloudAuthFFI", targets: ["SmbCloudAuthFFI"])
+        )
+    }
+
+    return products
+}()
 
 let package = Package(
     name: "SmbCloudAuth",
     platforms: [
         .iOS(.v16), .macOS(.v14), .tvOS(.v16), .visionOS(.v1),
     ],
-    products: [
-        .library(name: "SmbCloudAuth", targets: ["SmbCloudAuth"])
-    ],
-    targets: [
-        smbCloudAuthFrameworkTarget,
-        .target(
-            name: "SmbCloudAuth",
-            dependencies: [.target(name: "SmbCloudAuthFramework")],
-            path: "Sources/SmbCloudAuth"
-        ),
-    ]
+    products: products,
+    targets: targets
 )

@@ -1,7 +1,7 @@
 <h1 align="center">smbCloud Auth for Swift</h1>
 
 <p align="center">
-  <strong>Authenticate users on Apple platforms with <a href="https://smbcloud.xyz">smbCloud</a>.</strong>
+  <strong>Hosted authentication for Apple apps, built around secure public-client patterns.</strong>
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/smbcloudXYZ/smbcloud-cli">CLI</a> ·
+  <a href="https://github.com/smbcloudXYZ/smbcloud-cli">Rust core</a> ·
   <a href="https://www.npmjs.com/package/@smbcloud/sdk-auth">npm</a> ·
   <a href="https://pypi.org/project/smbcloud-sdk-auth/">PyPI</a> ·
   <a href="https://rubygems.org/gems/smbcloud-auth">RubyGems</a> ·
@@ -19,14 +19,165 @@
 
 ---
 
-## Platforms
+## Positioning
 
-| Platform | Minimum |
-|----------|---------|
-| iOS      | 16.0    |
-| macOS    | 14.0    |
-| tvOS     | 16.0    |
-| visionOS | 1.0     |
+`smbcloud-auth-swift` is intended to become the **Apple-platform client SDK** for smbCloud Auth:
+
+- iOS, macOS, tvOS, and visionOS support
+- hosted auth via system browser sessions
+- OIDC Authorization Code + PKCE
+- token exchange and session/profile helpers
+- **no client secret embedded in the shipped app**
+
+## Current status
+
+This package is still a **developer preview**, but the v1 public-client MVP surface, docs, tests, packaged example, and release validation workflows now exist.
+
+Today it provides:
+
+- `SmbCloudWebAuth`
+- `SmbCloudSession`
+- `SmbCloudCredentialsManager`
+- `SmbCloudUserInfoClient`
+- hosted OIDC login with PKCE
+- `ASWebAuthenticationSession` orchestration
+- callback parsing + code exchange
+- local Keychain-backed session persistence
+- userinfo lookup
+- local session clearing/logout helper
+
+The public `SmbCloudAuth` product is now a stable pure-Swift surface for hosted auth on Apple platforms.
+The low-level generated UniFFI layer remains available as an optional local `SmbCloudAuthFFI` product when you build the Rust/XCFramework side during sibling-repo development.
+
+## Security model
+
+### Recommended for public Apple apps
+
+Use:
+
+- hosted auth
+- system browser sessions (`ASWebAuthenticationSession`)
+- OIDC Authorization Code + PKCE
+
+This is the correct model for:
+
+- App Store apps
+- open-source apps
+- consumer apps
+- partner apps you do not fully control
+
+### Not recommended for shipped public apps
+
+Do **not** embed an smbCloud Auth `app_secret` in:
+
+- the app bundle
+- `Info.plist`
+- local config copied into the app
+- the binary itself
+
+Even if it is not committed to Git, a secret inside a distributed client app is recoverable.
+
+### If you want native email/password forms
+
+Use a backend or BFF/proxy that holds the smbCloud Auth secret on the server.
+
+That pattern is valid when product UX requires native forms, but the server must own the confidential credentials.
+
+## Why this package exists
+
+Apple developers want a native SDK, not just protocol details.
+
+The goal is simple:
+
+1. start auth
+2. open hosted login in a system browser session
+3. handle callback
+4. exchange code
+5. store session
+6. load profile or log out
+
+## Secure integration patterns
+
+### 1. Hosted auth + PKCE — recommended
+
+Best for:
+
+- public apps
+- open-source apps
+- App Store distribution
+
+Flow:
+
+1. build OIDC authorization request
+2. open hosted auth in `ASWebAuthenticationSession`
+3. receive callback URL
+4. parse `code` + `state`
+5. exchange code with PKCE verifier
+6. fetch user info
+7. store the resulting session locally
+
+### 2. Backend/BFF proxy — native forms
+
+Best for:
+
+- teams that want a fully native email/password screen
+- apps with an existing backend
+- managed enterprise deployments
+
+Flow:
+
+1. app shows native login/signup UI
+2. app sends credentials to your backend
+3. backend talks to smbCloud Auth with confidential credentials
+4. backend returns an app-safe session/token response
+
+## Current capabilities
+
+The main public-client API now centers on:
+
+- `SmbCloudWebAuth.login(...)`
+- `SmbCloudWebAuth.userInfo(...)`
+- `SmbCloudCredentialsManager.store(...)`
+- `SmbCloudCredentialsManager.current()`
+- `SmbCloudCredentialsManager.currentValidSession(...)`
+- `SmbCloudSession`
+- `SmbCloudUserInfoClient.userInfo(...)`
+
+That gives Apple apps an end-to-end hosted auth flow without writing their own PKCE, callback, token exchange, and Keychain glue.
+
+## Product direction
+
+The package now exposes an API in this shape:
+
+```/dev/null/swift-example.swift#L1-L23
+import SmbCloudAuth
+
+let webAuth = try SmbCloudWebAuth(
+    domain: "api.smbcloud.xyz",
+    clientId: "your-public-client-id",
+    redirectURL: URL(string: "myapp://auth/callback")!
+)
+
+let credentials = SmbCloudCredentialsManager()
+let session = try await webAuth.login(
+    presentationAnchorProvider: {
+        window
+    },
+    credentialsManager: credentials
+)
+
+let restored = try credentials.currentValidSession()
+let user = try await webAuth.userInfo(session: session)
+print(user.email ?? "")
+```
+
+And you can fetch profile data without the full web auth wrapper when needed:
+
+```/dev/null/swift-example.swift#L1-L12
+let userInfoClient = SmbCloudUserInfoClient(environment: .production)
+let user = try await userInfoClient.userInfo(accessToken: session.accessToken)
+print(user.sub)
+```
 
 ## Installation
 
@@ -34,13 +185,13 @@
 
 **File → Add Package Dependencies**, then enter:
 
-```
+```/dev/null/spm.txt#L1-L1
 https://github.com/smbcloudXYZ/smbcloud-auth-swift
 ```
 
 ### Swift Package Manager
 
-```swift
+```/dev/null/package.swift#L1-L8
 dependencies: [
     .package(url: "https://github.com/smbcloudXYZ/smbcloud-auth-swift", from: "0.4.1")
 ],
@@ -51,164 +202,67 @@ targets: [
 ]
 ```
 
-### XcodeGen
+## Platforms
 
-```yaml
-packages:
-  SmbCloudAuth:
-    url: https://github.com/smbcloudXYZ/smbcloud-auth-swift
-    from: 0.4.1
-targets:
-  MyApp:
-    dependencies:
-      - package: SmbCloudAuth
-        product: SmbCloudAuth
-```
+| Platform | Minimum |
+|----------|---------|
+| iOS      | 16.0    |
+| macOS    | 14.0    |
+| tvOS     | 16.0    |
+| visionOS | 1.0     |
 
-## Quick Start
+Hosted web login currently targets `ASWebAuthenticationSession` platforms: iOS, macOS, and visionOS. The shared session, storage, and userinfo helpers remain usable independently.
 
-```swift
-import SmbCloudAuth
+## Local development
 
-let auth = SmbCloudAuth(
-    environment: .production,
-    appId: "your-app-id",
-    appSecret: "your-app-secret"
-)
+Clone this repo alongside `smbcloud-cli`:
 
-// Sign up
-let result = try await auth.signup(email: "user@example.com", password: "s3cret")
-
-// Log in
-let status = try await auth.login(email: "user@example.com", password: "s3cret")
-switch status {
-case .ready(let accessToken):
-    print("Authenticated: \(accessToken)")
-case .incomplete(let errorCode):
-    print("Account incomplete: \(errorCode)")
-case .notFound:
-    print("Account not found")
-}
-
-// Get current user
-let user = try await auth.me(accessToken: "Bearer ...")
-print(user.email)
-
-// Log out
-try await auth.logout(accessToken: "Bearer ...")
-```
-
-## Apple Sign-In
-
-```swift
-// Build the authorization URL
-let request = try auth.buildAppleAuthorizationRequest(
-    redirectUri: "myapp://auth/callback",
-    state: nil // auto-generated if nil
-)
-
-// Open request.authorizeUrl in a browser or ASWebAuthenticationSession,
-// then parse the callback:
-let session = try auth.parseAppleCallbackUrl(
-    callbackUrl: callbackUrl,
-    expectedState: request.state
-)
-print(session.accessToken)
-```
-
-## OIDC (Authorization Code + PKCE)
-
-```swift
-// 1. Build authorization request
-let request = try auth.buildOidcAuthorizationRequest(
-    oidcClientId: "your-oidc-client-id",
-    redirectUri: "myapp://auth/callback"
-)
-// Open request.authorizeUrl in a browser...
-
-// 2. Parse the callback
-let callback = try auth.parseOidcCallbackUrl(callbackUrl: callbackUrl)
-
-// 3. Exchange the code for tokens
-let tokens = try await auth.exchangeOidcCode(
-    oidcClientId: "your-oidc-client-id",
-    redirectUri: "myapp://auth/callback",
-    code: callback.code,
-    codeVerifier: request.codeVerifier
-)
-print(tokens.accessToken)
-
-// 4. Fetch user info
-let userInfo = try await auth.getOidcUserinfo(
-    accessToken: tokens.accessToken,
-    tenantId: nil
-)
-print(userInfo.email ?? "no email")
-```
-
-## Error Handling
-
-All methods throw `SmbCloudAuthError` on failure:
-
-```swift
-do {
-    let status = try await auth.login(email: email, password: password)
-} catch let error as SmbCloudAuthError {
-    switch error {
-    case .api(let errorCode, let message):
-        print("API error \(errorCode): \(message)")
-    }
-}
-```
-
-## API Reference
-
-### `SmbCloudAuth`
-
-| Method | Description |
-|--------|-------------|
-| `login(email:password:)` | Authenticate with email and password |
-| `signup(email:password:)` | Create a new account |
-| `logout(accessToken:)` | Invalidate an access token |
-| `me(accessToken:)` | Fetch the authenticated user profile |
-| `removeAccount(accessToken:)` | Permanently delete the authenticated account |
-| `buildAppleAuthorizationRequest(redirectUri:state:)` | Build an Apple Sign-In authorization URL |
-| `parseAppleCallbackUrl(callbackUrl:expectedState:)` | Parse the Apple Sign-In callback |
-| `buildOidcAuthorizationRequest(oidcClientId:redirectUri:)` | Build an OIDC authorization URL with PKCE |
-| `parseOidcCallbackUrl(callbackUrl:)` | Parse the OIDC callback for code and state |
-| `exchangeOidcCode(oidcClientId:redirectUri:code:codeVerifier:)` | Exchange an authorization code for tokens |
-| `getOidcUserinfo(accessToken:tenantId:)` | Fetch OIDC user info |
-
-## Local Development
-
-Clone this repo alongside [smbcloud-cli](https://github.com/smbcloudXYZ/smbcloud-cli):
-
-```
+```/dev/null/tree.txt#L1-L4
 Repositories/
 ├── smbcloud-cli/
 └── smbcloud-auth-swift/
 ```
 
-Build the XCFramework from the Rust source:
+Build the optional local XCFramework + UniFFI shim from the Rust source:
 
-```bash
-make ios        # iOS device + simulator
-make macos      # macOS (Apple silicon)
-make tvos       # tvOS device + simulator
-make visionos   # visionOS device + simulator
+```/dev/null/bash.txt#L1-L4
+make ios
+make macos
+make tvos
+make visionos
 ```
 
-This cross-compiles the Rust `smbcloud-auth-sdk-apple` crate, generates Swift bindings via [UniFFI](https://mozilla.github.io/uniffi-rs/), and packages everything into `SmbCloudAuthFramework.xcframework`.
+This cross-compiles the Rust Apple bindings, regenerates `Sources/SmbCloudAuthFFI/smbcloud_auth.swift`, and writes the local XCFramework artifact used by the optional local `SmbCloudAuthFFI` product.
 
-To point at a different checkout of the Rust repo:
+The public `SmbCloudAuth` package can still build without these local Rust artifacts.
 
-```bash
-make ios CLI_REPO=/path/to/smbcloud-cli
+## Guides and examples
+
+- [Quick Start — iOS](Docs/QuickStart-iOS.md)
+- [Quick Start — macOS](Docs/QuickStart-macOS.md)
+- [Migration from proxy/native-form auth](Docs/Migration-From-Proxy-Native-Forms.md)
+- [Hosted login example](Examples/HostedLoginExample/README.md)
+- [Release process](Docs/Release.md)
+
+You can build the packaged macOS example app locally with:
+
+```/dev/null/bash.txt#L1-L1
+swift build --package-path Examples/HostedLoginExample
 ```
 
-## How It Works
+And you can validate generic Apple destination builds locally with:
 
-This package wraps the [smbcloud-auth-sdk](https://github.com/smbcloudXYZ/smbcloud-cli/tree/development/crates/smbcloud-auth-sdk) Rust crate, compiled to a static library for each Apple platform and bridged to Swift via [UniFFI](https://mozilla.github.io/uniffi-rs/) proc-macros. The result is a native Swift API with full async/await support — no Objective-C bridging headers, no C interop in your app code.
+```/dev/null/bash.txt#L1-L1
+make verify-apple-destinations
+```
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md).
+
+## Security guidance
+
+See [SECURITY.md](SECURITY.md).
 
 ## License
 

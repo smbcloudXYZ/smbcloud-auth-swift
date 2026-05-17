@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    tags-ignore:
+      - "v*.*.*"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Swift package and example
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Verify package
+        run: make verify
+
+  verify-apple-destinations:
+    name: Verify Apple destination build (${{ matrix.platform }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - ios
+          - tvos
+          - visionos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Verify destination build
+        run: make verify-apple-destination PLATFORM=${{ matrix.platform }}
