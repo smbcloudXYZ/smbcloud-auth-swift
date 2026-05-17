@@ -118,7 +118,7 @@ stage-framework:
 	  '  <key>CFBundlePackageType</key>' \
 	  '  <string>FMWK</string>' \
 	  '  <key>CFBundleShortVersionString</key>' \
-	  '  <string>0.4.1</string>' \
+	  '  <string>1.0.0</string>' \
 	  '  <key>CFBundleVersion</key>' \
 	  '  <string>1</string>' \
 	  '</dict>' \

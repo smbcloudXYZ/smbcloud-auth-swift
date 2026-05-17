@@ -193,7 +193,7 @@ https://github.com/smbcloudXYZ/smbcloud-auth-swift
 
 ```/dev/null/package.swift#L1-L8
 dependencies: [
-    .package(url: "https://github.com/smbcloudXYZ/smbcloud-auth-swift", from: "0.4.1")
+    .package(url: "https://github.com/smbcloudXYZ/smbcloud-auth-swift", from: "1.0.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
