@@ -1,3 +1,5 @@
 smbcloud_authFFI.xcframework/
 .local/
 .build/
+Examples/HostedLoginExample/.build/
+Examples/HostedLoginExample/.swiftpm/

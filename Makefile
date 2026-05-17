@@ -21,26 +21,35 @@ FRAMEWORK_STAGING_DIR := $(LOCAL_DIR)/frameworks
 FRAMEWORK_DIR := $(SWIFT_REPO)/smbcloud_authFFI.xcframework
 SLICE_FRAMEWORK_NAME := smbcloud_authFFI.framework
 FRAMEWORK_BINARY_NAME := smbcloud_authFFI
-SWIFT_GLUE := $(SWIFT_REPO)/Sources/SmbCloudAuth/smbcloud_auth.swift
+SWIFT_GLUE := $(SWIFT_REPO)/Sources/SmbCloudAuthFFI/smbcloud_auth.swift
+LOCAL_FFI_MARKER := $(LOCAL_DIR)/use-local-ffi
 
 LIB_NAME := libsmbcloud_auth.a
 SUPPORTED_PLATFORMS := ios macos tvos visionos
 
-.PHONY: help platform ios macos tvos visionos validate build-bindgen prepare generate-swift stage-framework clean
+.PHONY: help platform ios macos tvos visionos validate build-bindgen prepare generate-swift stage-framework activate-local-ffi deactivate-local-ffi clean verify verify-example verify-apple-destinations verify-apple-destination
 
 help:
 	@printf '%s\n' \
 	  'SmbCloudAuth Swift — local Apple-platform builds' \
 	  '' \
 	  'Usage:' \
-	  '  make ios        Build smbcloud_authFFI.xcframework for iOS device + simulator' \
-	  '  make macos      Build smbcloud_authFFI.xcframework for macOS (Apple silicon)' \
-	  '  make tvos       Build smbcloud_authFFI.xcframework for tvOS device + simulator' \
-	  '  make visionos   Build smbcloud_authFFI.xcframework for visionOS device + simulator' \
+	  '  make ios                     Build smbcloud_authFFI.xcframework for iOS device + simulator' \
+	  '  make macos                   Build smbcloud_authFFI.xcframework for macOS (Apple silicon)' \
+	  '  make tvos                    Build smbcloud_authFFI.xcframework for tvOS device + simulator' \
+	  '  make visionos                Build smbcloud_authFFI.xcframework for visionOS device + simulator' \
+	  '  make verify                  Build + test the main Swift package and build the example app package' \
+	  '  make verify-example          Build the packaged macOS example app' \
+	  '  make verify-apple-destinations  Build the public package for iOS, tvOS, and visionOS generic destinations' \
+	  '  make deactivate-local-ffi    Hide the optional local SmbCloudAuthFFI product' \
 	  '' \
 	  'Artifacts:' \
 	  '  smbcloud_authFFI.xcframework/' \
-	  '  Sources/SmbCloudAuth/smbcloud_auth.swift (regenerated from the local Rust build)' \
+	  '  Sources/SmbCloudAuthFFI/smbcloud_auth.swift (regenerated from the local Rust build)' \
+	  '' \
+	  'Notes:' \
+	  '  The public SmbCloudAuth product is pure Swift and always available.' \
+	  '  Local Rust/UniFFI builds enable the optional SmbCloudAuthFFI product.' \
 	  '' \
 	  'Optional overrides:' \
 	  '  CLI_REPO=/absolute/path/to/smbcloud-cli'
@@ -61,8 +70,8 @@ build-bindgen: validate
 	cargo $(RUST_STABLE) build --manifest-path "$(APPLE_CRATE_MANIFEST)" --features bindgen --bin uniffi-bindgen --release
 
 prepare:
-	@rm -rf "$(FRAMEWORK_DIR)" "$(GENERATED_DIR)" "$(HEADERS_DIR)" "$(FRAMEWORK_STAGING_DIR)"
-	@mkdir -p "$(GENERATED_DIR)" "$(HEADERS_DIR)" "$(FRAMEWORK_STAGING_DIR)"
+	@rm -rf "$(FRAMEWORK_DIR)" "$(GENERATED_DIR)" "$(HEADERS_DIR)" "$(FRAMEWORK_STAGING_DIR)" "$(LOCAL_FFI_MARKER)"
+	@mkdir -p "$(GENERATED_DIR)" "$(HEADERS_DIR)" "$(FRAMEWORK_STAGING_DIR)" "$(SWIFT_REPO)/Sources/SmbCloudAuthFFI"
 
 generate-swift:
 	@test -n "$(BINDGEN_INPUT)" || { echo "BINDGEN_INPUT is required"; exit 1; }
@@ -70,6 +79,15 @@ generate-swift:
 	cp "$(GENERATED_DIR)/smbcloud_auth.swift" "$(SWIFT_GLUE)"
 	cp "$(GENERATED_DIR)/smbcloud_authFFI.h" "$(HEADERS_DIR)/smbcloud_authFFI.h"
 	@echo "Updated $(SWIFT_GLUE)"
+
+activate-local-ffi:
+	@mkdir -p "$(LOCAL_DIR)"
+	@touch "$(LOCAL_FFI_MARKER)"
+	@echo "Enabled local SmbCloudAuthFFI product"
+
+deactivate-local-ffi:
+	@rm -f "$(LOCAL_FFI_MARKER)"
+	@echo "Disabled local SmbCloudAuthFFI product"
 
 stage-framework:
 	@test -n "$(LIB_INPUT)" || { echo "LIB_INPUT is required"; exit 1; }
@@ -116,6 +134,7 @@ ios: build-bindgen prepare
 	  -framework "$(FRAMEWORK_STAGING_DIR)/ios/$(SLICE_FRAMEWORK_NAME)" \
 	  -framework "$(FRAMEWORK_STAGING_DIR)/ios-sim/$(SLICE_FRAMEWORK_NAME)" \
 	  -output "$(FRAMEWORK_DIR)"
+	$(MAKE) activate-local-ffi
 	@echo "Built $(FRAMEWORK_DIR) for iOS"
 
 macos: build-bindgen prepare
@@ -125,6 +144,7 @@ macos: build-bindgen prepare
 	xcodebuild -create-xcframework \
 	  -framework "$(FRAMEWORK_STAGING_DIR)/macos/$(SLICE_FRAMEWORK_NAME)" \
 	  -output "$(FRAMEWORK_DIR)"
+	$(MAKE) activate-local-ffi
 	@echo "Built $(FRAMEWORK_DIR) for macOS"
 
 tvos: build-bindgen prepare
@@ -137,6 +157,7 @@ tvos: build-bindgen prepare
 	  -framework "$(FRAMEWORK_STAGING_DIR)/tvos/$(SLICE_FRAMEWORK_NAME)" \
 	  -framework "$(FRAMEWORK_STAGING_DIR)/tvos-sim/$(SLICE_FRAMEWORK_NAME)" \
 	  -output "$(FRAMEWORK_DIR)"
+	$(MAKE) activate-local-ffi
 	@echo "Built $(FRAMEWORK_DIR) for tvOS"
 
 visionos: build-bindgen prepare
@@ -149,8 +170,33 @@ visionos: build-bindgen prepare
 	  -framework "$(FRAMEWORK_STAGING_DIR)/visionos/$(SLICE_FRAMEWORK_NAME)" \
 	  -framework "$(FRAMEWORK_STAGING_DIR)/visionos-sim/$(SLICE_FRAMEWORK_NAME)" \
 	  -output "$(FRAMEWORK_DIR)"
+	$(MAKE) activate-local-ffi
 	@echo "Built $(FRAMEWORK_DIR) for visionOS"
+
+verify:
+	swift build
+	swift test
+	$(MAKE) verify-example
+
+verify-example:
+	swift build --package-path Examples/HostedLoginExample
+
+verify-apple-destinations:
+	$(MAKE) verify-apple-destination PLATFORM=ios
+	$(MAKE) verify-apple-destination PLATFORM=tvos
+	$(MAKE) verify-apple-destination PLATFORM=visionos
+
+verify-apple-destination:
+	@test -n "$(PLATFORM)" || { echo "Set PLATFORM=ios|tvos|visionos"; exit 1; }
+	@case "$(PLATFORM)" in \
+	  ios) destination="generic/platform=iOS"; derived_data="$(LOCAL_DIR)/verify-ios" ;; \
+	  tvos) destination="generic/platform=tvOS"; derived_data="$(LOCAL_DIR)/verify-tvos" ;; \
+	  visionos) destination="generic/platform=visionOS"; derived_data="$(LOCAL_DIR)/verify-visionos" ;; \
+	  *) echo "Unsupported PLATFORM='$(PLATFORM)'. Expected one of: ios tvos visionos"; exit 1 ;; \
+	esac; \
+	xcodebuild -quiet -scheme SmbCloudAuth -destination "$${destination}" -derivedDataPath "$${derived_data}" build
 
 clean:
 	rm -rf "$(FRAMEWORK_DIR)" "$(LOCAL_DIR)"
+	rm -f "$(SWIFT_GLUE)"
 	@echo "Removed local SmbCloudAuth Swift build artifacts"

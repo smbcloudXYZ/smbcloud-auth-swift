@@ -31,7 +31,7 @@
 
 ## Current status
 
-This package is still a **developer preview**, but the v1 public-client MVP surface now exists.
+This package is still a **developer preview**, but the v1 public-client MVP surface, docs, tests, packaged example, and release validation workflows now exist.
 
 Today it provides:
 
@@ -46,7 +46,8 @@ Today it provides:
 - userinfo lookup
 - local session clearing/logout helper
 
-The low-level generated UniFFI layer is still part of the repo for compatible XCFramework-based builds, but the package now has a first-class public Swift API for the main Apple login flow.
+The public `SmbCloudAuth` product is now a stable pure-Swift surface for hosted auth on Apple platforms.
+The low-level generated UniFFI layer remains available as an optional local `SmbCloudAuthFFI` product when you build the Rust/XCFramework side during sibling-repo development.
 
 ## Security model
 
@@ -222,7 +223,7 @@ Repositories/
 └── smbcloud-auth-swift/
 ```
 
-Build the local XCFramework from the Rust source:
+Build the optional local XCFramework + UniFFI shim from the Rust source:
 
 ```/dev/null/bash.txt#L1-L4
 make ios
@@ -231,7 +232,29 @@ make tvos
 make visionos
 ```
 
-This cross-compiles the Rust Apple bindings, regenerates `Sources/SmbCloudAuth/smbcloud_auth.swift`, and writes the local XCFramework artifact used by SwiftPM.
+This cross-compiles the Rust Apple bindings, regenerates `Sources/SmbCloudAuthFFI/smbcloud_auth.swift`, and writes the local XCFramework artifact used by the optional local `SmbCloudAuthFFI` product.
+
+The public `SmbCloudAuth` package can still build without these local Rust artifacts.
+
+## Guides and examples
+
+- [Quick Start — iOS](Docs/QuickStart-iOS.md)
+- [Quick Start — macOS](Docs/QuickStart-macOS.md)
+- [Migration from proxy/native-form auth](Docs/Migration-From-Proxy-Native-Forms.md)
+- [Hosted login example](Examples/HostedLoginExample/README.md)
+- [Release process](Docs/Release.md)
+
+You can build the packaged macOS example app locally with:
+
+```/dev/null/bash.txt#L1-L1
+swift build --package-path Examples/HostedLoginExample
+```
+
+And you can validate generic Apple destination builds locally with:
+
+```/dev/null/bash.txt#L1-L1
+make verify-apple-destinations
+```
 
 ## Roadmap
 

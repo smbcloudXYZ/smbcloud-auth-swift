@@ -23,12 +23,14 @@ Use:
 - hosted auth
 - system browser sessions
 - OIDC Authorization Code + PKCE
+- Keychain-backed local session storage
 
 On Apple platforms this generally means:
 
 - `ASWebAuthenticationSession`
 - a custom URL scheme or universal link callback
 - token exchange after the callback returns
+- persisting `SmbCloudSession` with `SmbCloudCredentialsManager`
 
 ## Do not use embedded browser auth
 
@@ -64,6 +66,18 @@ not:
 
 - confidential-client secret-based login inside the shipped app
 
+## Local credential storage
+
+If you persist sessions locally, prefer Keychain storage.
+
+The SDK provides `SmbCloudCredentialsManager` for that purpose.
+Use an explicit per-app `service` name so multiple apps or test targets do not accidentally share the same stored session namespace.
+
+## Logout semantics
+
+The current SDK `logout()` helper is a local session-clearing helper.
+It clears persisted credentials through `SmbCloudCredentialsManager`, but it does not yet perform remote token revocation.
+
 ## Operational guidance
 
 For development:
@@ -71,9 +85,11 @@ For development:
 - use separate dev credentials
 - prefer local-only configuration
 - never commit secrets into the repo
+- use a development-specific Keychain service name if you store sessions locally
 
 For production:
 
 - use public-client identifiers only in the app
 - keep confidential secrets in server-side systems
 - audit example code to ensure no public sample embeds secrets
+- review callback URL handling and Keychain service naming before shipping

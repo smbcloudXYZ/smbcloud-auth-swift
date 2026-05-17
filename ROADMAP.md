@@ -89,7 +89,9 @@ What is missing:
 
 Status:
 
-- core API surface implemented in developer preview
+- v1 MVP complete in developer preview form
+- core API surface implemented
+- docs, tests, packaged example app target, CI, and release workflow implemented
 
 Goal:
 
@@ -112,15 +114,18 @@ Ship the first sellable public-client SDK for Apple apps.
 - local session persistence
 - local logout/session clearing helper
 
-### Remaining polish before stable v1
+### Completed MVP docs and examples
 
 - Quick Start for iOS
 - Quick Start for macOS
-- example app
+- hosted login example
 - migration guide for teams coming from proxy/native-form auth
-- release artifact parity across Apple platforms
-- logout / revocation story beyond local session clearing
-- security guidance refresh for the final API shape
+- security guidance refresh for the current API shape
+
+### Stable-v1 follow-up work
+
+- release artifact parity across Apple platforms for the optional local `SmbCloudAuthFFI` product
+- logout / revocation story beyond local session clearing if smbCloud Auth exposes a public-client-safe revocation flow
 
 ### MVP example shape
 
