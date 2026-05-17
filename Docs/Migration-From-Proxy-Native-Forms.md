@@ -109,4 +109,3 @@ This SDK does not try to replace secure server-side confidential flows for those
 
 - `Docs/QuickStart-iOS.md`
 - `Docs/QuickStart-macOS.md`
-- `SECURITY.md`

@@ -28,8 +28,8 @@ public enum SmbCloudClientError: Error, LocalizedError, Sendable {
             return "The callback URL did not include an authorization code."
         case .missingAuthorizationState:
             return "The callback URL did not include an authorization state value."
-        case .stateMismatch(let expected, let received):
-            return "The callback state did not match. Expected \(expected), received \(received)."
+        case .stateMismatch:
+            return "The callback state did not match."
         case .unsupportedPlatform:
             return "Hosted web authentication is not supported on this platform."
         case .loginInProgress:

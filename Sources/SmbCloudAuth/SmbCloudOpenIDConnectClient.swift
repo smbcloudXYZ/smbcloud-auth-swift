@@ -99,9 +99,12 @@ internal struct SmbCloudOpenIDConnectClient {
         let codeChallenge = Self.sha256Base64URL(from: codeVerifier)
         let normalizedScopes = Self.normalizedScopes(scopes)
 
+        let authorizeEndpoint = endpointURL(path: "oauth/authorize")
+        try Self.validateTransportSecurity(for: authorizeEndpoint)
+
         guard
             var components = URLComponents(
-                url: endpointURL(path: "oauth/authorize"),
+                url: authorizeEndpoint,
                 resolvingAgainstBaseURL: false
             )
         else {
@@ -216,6 +219,12 @@ internal struct SmbCloudOpenIDConnectClient {
     func send<Response: Decodable>(_ request: URLRequest, decodeAs: Response.Type) async throws
         -> Response
     {
+        guard let requestURL = request.url else {
+            throw SmbCloudClientError.invalidResponse
+        }
+
+        try Self.validateTransportSecurity(for: requestURL)
+
         let data: Data
         let response: URLResponse
 
@@ -285,6 +294,32 @@ internal struct SmbCloudOpenIDConnectClient {
         return Data(digest).base64URLEncodedString()
     }
 
+    static func validateTransportSecurity(for url: URL) throws {
+        let normalizedScheme = url.scheme?.lowercased()
+        if normalizedScheme == "https" {
+            return
+        }
+
+        if normalizedScheme == "http", isLoopbackHost(url.host) {
+            return
+        }
+
+        throw SmbCloudClientError.invalidBaseURL(
+            "smbCloud Auth URLs must use HTTPS. Plain HTTP is only allowed for local loopback development."
+        )
+    }
+
+    static func isLoopbackHost(_ host: String?) -> Bool {
+        guard let normalizedHost = host?.lowercased() else {
+            return false
+        }
+
+        return normalizedHost == "localhost"
+            || normalizedHost == "127.0.0.1"
+            || normalizedHost == "::1"
+            || normalizedHost == "[::1]"
+    }
+
     static func formEncodedData(from items: [URLQueryItem]) -> Data? {
         var components = URLComponents()
         components.queryItems = items
@@ -317,6 +352,8 @@ internal enum SmbCloudBaseURLFactory {
                 "The smbCloud Auth domain or base URL is invalid: \(domain)"
             )
         }
+
+        try SmbCloudOpenIDConnectClient.validateTransportSecurity(for: url)
 
         return url
     }
