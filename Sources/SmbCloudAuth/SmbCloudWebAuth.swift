@@ -7,76 +7,76 @@ import Foundation
     public typealias SmbCloudPresentationAnchor = ASPresentationAnchor
 #endif
 
-/// Apple-platform hosted login built on `AuthCore`.
-///
-/// `SmbCloudWebAuth` wraps the cross-platform ``SmbCloudAuthClient`` engine and
-/// adds an `ASWebAuthenticationSession`-driven `login(...)` for iOS, macOS, and
-/// visionOS. The non-interactive helpers (`userInfo`, `logout`, `clearSession`)
-/// are available wherever the package builds.
-///
-/// For headless or non-Apple usage (Linux, Windows, Android, servers, tests),
-/// use ``SmbCloudAuthClient`` from the `AuthCore` product directly.
-public final class SmbCloudWebAuth: @unchecked Sendable {
-    public static let defaultScopes: [String] = SmbCloudAuthClient.defaultScopes
+/// Errors specific to the Apple hosted-login UI.
+public enum SmbCloudWebAuthError: Error, LocalizedError, Sendable {
+    case loginInProgress
+    case cancelled
+    case invalidRedirectURL(String)
+    case stateMismatch
+    case missingCallbackURL
+    case authenticationFailed(String?)
 
-    private let authClient: SmbCloudAuthClient
+    public var errorDescription: String? {
+        switch self {
+        case .loginInProgress: return "A web authentication session is already in progress."
+        case .cancelled: return "The authentication session was cancelled."
+        case .invalidRedirectURL(let message): return message
+        case .stateMismatch: return "The callback state did not match."
+        case .missingCallbackURL: return "The authentication session completed without a callback URL."
+        case .authenticationFailed(let message): return message ?? "The authentication session failed."
+        }
+    }
+}
+
+/// Apple-platform hosted login built on `AuthCore`'s OIDC public-client flow.
+///
+/// `SmbCloudWebAuth` is the **public client** entry point: it uses only an
+/// `oidcClientId` (no `app_secret`) and drives an `ASWebAuthenticationSession`
+/// through smbCloud's OIDC Authorization Code + PKCE flow. This is the
+/// recommended native sign-in path. Email/password sign-in (which needs the
+/// confidential `app_secret`) belongs on a backend via ``AuthCoreClient``.
+///
+/// For headless or non-Apple usage, use ``OIDC`` (or ``AuthCoreClient``) from
+/// the `AuthCore` product directly.
+public final class SmbCloudWebAuth: @unchecked Sendable {
+    public let environment: SmbCloudEnvironment
+    public let oidcClientId: String
+    public let redirectURL: URL
 
     #if canImport(AuthenticationServices) && (os(iOS) || os(macOS) || os(visionOS))
-        @MainActor
-        private var activeAuthenticationSession: ASWebAuthenticationSession?
-
-        @MainActor
-        private var activePresentationContextProvider: SmbCloudPresentationContextProvider?
+        @MainActor private var activeAuthenticationSession: ASWebAuthenticationSession?
+        @MainActor private var activePresentationContextProvider: SmbCloudPresentationContextProvider?
     #endif
 
     public init(
         environment: SmbCloudEnvironment = .production,
-        clientId: String,
+        oidcClientId: String,
         redirectURL: URL
     ) {
-        self.authClient = SmbCloudAuthClient(
-            environment: environment,
-            clientId: clientId,
-            redirectURL: redirectURL
-        )
+        self.environment = environment
+        self.oidcClientId = oidcClientId
+        self.redirectURL = redirectURL
     }
 
-    public init(baseURL: URL, clientId: String, redirectURL: URL) {
-        self.authClient = SmbCloudAuthClient(
-            baseURL: baseURL,
-            clientId: clientId,
-            redirectURL: redirectURL
-        )
+    /// The callback scheme derived from ``redirectURL``.
+    public var callbackScheme: String? {
+        guard let scheme = redirectURL.scheme, !scheme.isEmpty else { return nil }
+        return scheme
     }
 
-    public convenience init(domain: String, clientId: String, redirectURL: URL) throws {
-        let authClient = try SmbCloudAuthClient(
-            domain: domain,
-            clientId: clientId,
-            redirectURL: redirectURL
-        )
-        self.init(authClient: authClient)
-    }
-
-    private init(authClient: SmbCloudAuthClient) {
-        self.authClient = authClient
-    }
-
-    /// The underlying headless engine, exposed for advanced/cross-cutting use.
-    public var client: SmbCloudAuthClient {
-        authClient
-    }
+    // Non-interactive helpers, available wherever the package builds.
 
     public func userInfo(accessToken: String, tenantId: String? = nil) async throws
-        -> SmbCloudUserInfo
+        -> OIDC.UserInfo
     {
-        try await authClient.userInfo(accessToken: accessToken, tenantId: tenantId)
+        try await OIDC.getUserInfo(
+            environment: environment, accessToken: accessToken, tenantId: tenantId)
     }
 
     public func userInfo(session: SmbCloudSession, tenantId: String? = nil) async throws
-        -> SmbCloudUserInfo
+        -> OIDC.UserInfo
     {
-        try await authClient.userInfo(session: session, tenantId: tenantId)
+        try await userInfo(accessToken: session.accessToken, tenantId: tenantId)
     }
 
     public func clearSession(credentialsManager: SmbCloudCredentialsStore? = nil) throws {
@@ -90,32 +90,29 @@ public final class SmbCloudWebAuth: @unchecked Sendable {
 
 #if canImport(AuthenticationServices) && (os(iOS) || os(macOS) || os(visionOS))
     extension SmbCloudWebAuth {
+        /// Presents the hosted OIDC login and returns the resulting session.
         @MainActor
         public func login(
             presentationAnchorProvider: @escaping () -> SmbCloudPresentationAnchor,
-            scopes: [String] = SmbCloudWebAuth.defaultScopes,
-            audience: String? = nil,
             prefersEphemeralSession: Bool = false,
             credentialsManager: SmbCloudCredentialsStore? = nil
         ) async throws -> SmbCloudSession {
             guard activeAuthenticationSession == nil else {
-                throw SmbCloudClientError.loginInProgress
+                throw SmbCloudWebAuthError.loginInProgress
+            }
+            guard let callbackScheme else {
+                throw SmbCloudWebAuthError.invalidRedirectURL(
+                    "The redirect URL must include a callback scheme.")
             }
 
-            let authorizationRequest = try authClient.authorizationRequest(
-                scopes: scopes,
-                audience: audience
+            let authRequest = try OIDC.buildAuthorizationRequest(
+                environment: environment,
+                oidcClientId: oidcClientId,
+                redirectURI: redirectURL.absoluteString
             )
-
-            guard let callbackScheme = authClient.callbackScheme else {
-                throw SmbCloudClientError.invalidRedirectURL(
-                    "The redirect URL must include a callback scheme."
-                )
-            }
 
             let presentationContextProvider = SmbCloudPresentationContextProvider(
-                presentationAnchorProvider: presentationAnchorProvider
-            )
+                presentationAnchorProvider: presentationAnchorProvider)
 
             defer {
                 activeAuthenticationSession = nil
@@ -126,23 +123,17 @@ public final class SmbCloudWebAuth: @unchecked Sendable {
                 try await withCheckedThrowingContinuation {
                     (continuation: CheckedContinuation<URL, Error>) in
                     let session = ASWebAuthenticationSession(
-                        url: authorizationRequest.authorizeURL,
+                        url: authRequest.authorizeURL,
                         callbackURLScheme: callbackScheme
                     ) { callbackURL, error in
                         if let error {
                             continuation.resume(throwing: Self.authenticationError(from: error))
                             return
                         }
-
                         guard let callbackURL else {
-                            continuation.resume(
-                                throwing: SmbCloudClientError.authenticationFailed(
-                                    "The authentication session completed without a callback URL."
-                                )
-                            )
+                            continuation.resume(throwing: SmbCloudWebAuthError.missingCallbackURL)
                             return
                         }
-
                         continuation.resume(returning: callbackURL)
                     }
 
@@ -156,18 +147,13 @@ public final class SmbCloudWebAuth: @unchecked Sendable {
                         activeAuthenticationSession = nil
                         activePresentationContextProvider = nil
                         continuation.resume(
-                            throwing: SmbCloudClientError.authenticationFailed(
-                                "Failed to start the smbCloud web authentication session."
-                            )
-                        )
+                            throwing: SmbCloudWebAuthError.authenticationFailed(
+                                "Failed to start the smbCloud web authentication session."))
                         return
                     }
                 }
             } onCancel: { [weak self] in
-                guard let self else {
-                    return
-                }
-
+                guard let self else { return }
                 Task { @MainActor in
                     self.activeAuthenticationSession?.cancel()
                     self.activeAuthenticationSession = nil
@@ -175,27 +161,36 @@ public final class SmbCloudWebAuth: @unchecked Sendable {
                 }
             }
 
-            return try await authClient.exchangeCallback(
-                callbackURL,
-                authorizationRequest: authorizationRequest,
-                credentialsStore: credentialsManager
+            let payload = try OIDC.parseCallbackURL(callbackURL.absoluteString)
+            guard payload.state == authRequest.state else {
+                throw SmbCloudWebAuthError.stateMismatch
+            }
+
+            let tokens = try await OIDC.exchangeCode(
+                environment: environment,
+                oidcClientId: oidcClientId,
+                redirectURI: redirectURL.absoluteString,
+                code: payload.code,
+                codeVerifier: authRequest.codeVerifier
             )
+
+            let session = SmbCloudSession(tokenResponse: tokens)
+            try credentialsManager?.store(session)
+            return session
         }
 
-        private static func authenticationError(from error: Error) -> SmbCloudClientError {
-            if let authenticationError = error as? ASWebAuthenticationSessionError,
-                authenticationError.code == .canceledLogin
+        private static func authenticationError(from error: Error) -> SmbCloudWebAuthError {
+            if let authError = error as? ASWebAuthenticationSessionError,
+                authError.code == .canceledLogin
             {
                 return .cancelled
             }
-
             return .authenticationFailed(error.localizedDescription)
         }
     }
 
     private final class SmbCloudPresentationContextProvider:
-        NSObject,
-        ASWebAuthenticationPresentationContextProviding
+        NSObject, ASWebAuthenticationPresentationContextProviding
     {
         private let presentationAnchorProvider: () -> SmbCloudPresentationAnchor
 

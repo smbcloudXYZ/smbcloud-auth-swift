@@ -1,5 +1,8 @@
 import Foundation
 
+/// A persisted credential — the access token plus optional refresh/id tokens
+/// and expiry. Produced by the OIDC token exchange (and storable from a tenant
+/// login), and what ``SmbCloudCredentialsStore`` persists.
 public struct SmbCloudSession: Codable, Equatable, Hashable, Sendable {
     public let accessToken: String
     public let refreshToken: String?
@@ -25,11 +28,7 @@ public struct SmbCloudSession: Codable, Equatable, Hashable, Sendable {
     }
 
     public var scope: String? {
-        guard scopes.isEmpty == false else {
-            return nil
-        }
-
-        return scopes.joined(separator: " ")
+        scopes.isEmpty ? nil : scopes.joined(separator: " ")
     }
 
     public var authorizationHeaderValue: String {
@@ -41,10 +40,7 @@ public struct SmbCloudSession: Codable, Equatable, Hashable, Sendable {
     }
 
     public func isExpired(leeway: TimeInterval = 0) -> Bool {
-        guard let expiresAt else {
-            return false
-        }
-
+        guard let expiresAt else { return false }
         return expiresAt <= Date().addingTimeInterval(leeway)
     }
 
@@ -54,23 +50,30 @@ public struct SmbCloudSession: Codable, Equatable, Hashable, Sendable {
 }
 
 extension SmbCloudSession {
-    init(tokenResponse: SmbCloudTokenPayload, now: Date = Date()) {
+    /// Builds a session from an OIDC token exchange response.
+    public init(tokenResponse: OIDC.TokenResponse, now: Date = Date()) {
         let expiresAt = tokenResponse.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) }
+        let scopes =
+            tokenResponse.scope?
+            .split(separator: " ")
+            .map(String.init)
+            .smbCloudUniqued() ?? []
         self.init(
             accessToken: tokenResponse.accessToken,
-            refreshToken: tokenResponse.refreshToken?.nilIfEmpty,
-            idToken: tokenResponse.idToken?.nilIfEmpty,
+            refreshToken: tokenResponse.refreshToken?.smbCloudNilIfEmpty,
+            idToken: tokenResponse.idToken?.smbCloudNilIfEmpty,
             tokenType: tokenResponse.tokenType,
             expiresAt: expiresAt,
-            scopes: SmbCloudOpenIDConnectClient.normalizedScopes(from: tokenResponse.scope)
+            scopes: scopes
         )
     }
 
+    /// A normalized copy (trimmed/deduped scopes, empty tokens dropped).
     public func storedRepresentation() -> SmbCloudSession {
         SmbCloudSession(
             accessToken: accessToken,
-            refreshToken: refreshToken?.nilIfEmpty,
-            idToken: idToken?.nilIfEmpty,
+            refreshToken: refreshToken?.smbCloudNilIfEmpty,
+            idToken: idToken?.smbCloudNilIfEmpty,
             tokenType: tokenType,
             expiresAt: expiresAt,
             scopes: scopes.smbCloudUniqued()
@@ -79,7 +82,7 @@ extension SmbCloudSession {
 }
 
 extension String {
-    var nilIfEmpty: String? {
+    var smbCloudNilIfEmpty: String? {
         trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
     }
 }
@@ -87,20 +90,10 @@ extension String {
 extension Sequence where Element == String {
     func smbCloudUniqued() -> [String] {
         var seen = Set<String>()
-
         return compactMap { value in
-            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmedValue.isEmpty == false else {
-                return nil
-            }
-
-            return seen.insert(trimmedValue).inserted ? trimmedValue : nil
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return seen.insert(trimmed).inserted ? trimmed : nil
         }
-    }
-}
-
-extension Sequence where Element == URLQueryItem {
-    func firstValue(named name: String) -> String? {
-        first(where: { $0.name == name })?.value?.nilIfEmpty
     }
 }

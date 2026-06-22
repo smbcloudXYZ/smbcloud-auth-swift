@@ -18,7 +18,7 @@ This folder contains a small SwiftUI-oriented example of the v1 MVP API surface:
 
 Before using the example, replace:
 
-- `YOUR_PUBLIC_CLIENT_ID`
+- `YOUR_OIDC_CLIENT_ID`
 - `hostedloginexample://auth/callback`
 - Keychain service name
 

@@ -30,23 +30,14 @@ final class AuthenticationStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var isLoading = false
 
-    private let webAuth: SmbCloudWebAuth?
+    private let webAuth = SmbCloudWebAuth(
+        environment: .production,
+        oidcClientId: "YOUR_OIDC_CLIENT_ID",
+        redirectURL: URL(string: "myapp://auth/callback")!
+    )
     private let credentialsManager = SmbCloudCredentialsManager(
         service: "com.example.myapp.smbcloud-auth"
     )
-
-    init() {
-        do {
-            self.webAuth = try SmbCloudWebAuth(
-                domain: "api.smbcloud.xyz",
-                clientId: "YOUR_PUBLIC_CLIENT_ID",
-                redirectURL: URL(string: "myapp://auth/callback")!
-            )
-        } catch {
-            self.webAuth = nil
-            self.errorMessage = error.localizedDescription
-        }
-    }
 
     func restoreSession() {
         do {
@@ -57,11 +48,6 @@ final class AuthenticationStore: ObservableObject {
     }
 
     func signIn(anchor: @escaping () -> SmbCloudPresentationAnchor) async {
-        guard let webAuth else {
-            errorMessage = errorMessage ?? "The smbCloud web auth client could not be created."
-            return
-        }
-
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -82,7 +68,7 @@ final class AuthenticationStore: ObservableObject {
 
     func signOut() {
         do {
-            try webAuth?.clearSession(credentialsManager: credentialsManager)
+            try webAuth.clearSession(credentialsManager: credentialsManager)
             session = nil
             email = nil
             errorMessage = nil
