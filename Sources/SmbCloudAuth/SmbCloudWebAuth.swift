@@ -1,3 +1,4 @@
+import AuthCore
 import Foundation
 
 #if canImport(AuthenticationServices) && (os(iOS) || os(macOS) || os(visionOS))
@@ -6,13 +7,19 @@ import Foundation
     public typealias SmbCloudPresentationAnchor = ASPresentationAnchor
 #endif
 
+/// Apple-platform hosted login built on `AuthCore`.
+///
+/// `SmbCloudWebAuth` wraps the cross-platform ``SmbCloudAuthClient`` engine and
+/// adds an `ASWebAuthenticationSession`-driven `login(...)` for iOS, macOS, and
+/// visionOS. The non-interactive helpers (`userInfo`, `logout`, `clearSession`)
+/// are available wherever the package builds.
+///
+/// For headless or non-Apple usage (Linux, Windows, Android, servers, tests),
+/// use ``SmbCloudAuthClient`` from the `AuthCore` product directly.
 public final class SmbCloudWebAuth: @unchecked Sendable {
-    public static let defaultScopes: [String] = ["openid", "profile", "email"]
+    public static let defaultScopes: [String] = SmbCloudAuthClient.defaultScopes
 
-    private let clientId: String
-    private let redirectURL: URL
-    private let client: SmbCloudOpenIDConnectClient
-    private let userInfoClient: SmbCloudUserInfoClient
+    private let authClient: SmbCloudAuthClient
 
     #if canImport(AuthenticationServices) && (os(iOS) || os(macOS) || os(visionOS))
         @MainActor
@@ -27,42 +34,56 @@ public final class SmbCloudWebAuth: @unchecked Sendable {
         clientId: String,
         redirectURL: URL
     ) {
-        let baseURL = SmbCloudBaseURLFactory.makeURL(for: environment)
-        self.clientId = clientId
-        self.redirectURL = redirectURL
-        self.client = SmbCloudOpenIDConnectClient(baseURL: baseURL)
-        self.userInfoClient = SmbCloudUserInfoClient(baseURL: baseURL)
+        self.authClient = SmbCloudAuthClient(
+            environment: environment,
+            clientId: clientId,
+            redirectURL: redirectURL
+        )
     }
 
     public init(baseURL: URL, clientId: String, redirectURL: URL) {
-        self.clientId = clientId
-        self.redirectURL = redirectURL
-        self.client = SmbCloudOpenIDConnectClient(baseURL: baseURL)
-        self.userInfoClient = SmbCloudUserInfoClient(baseURL: baseURL)
+        self.authClient = SmbCloudAuthClient(
+            baseURL: baseURL,
+            clientId: clientId,
+            redirectURL: redirectURL
+        )
     }
 
     public convenience init(domain: String, clientId: String, redirectURL: URL) throws {
-        let baseURL = try SmbCloudBaseURLFactory.makeURL(from: domain)
-        self.init(baseURL: baseURL, clientId: clientId, redirectURL: redirectURL)
+        let authClient = try SmbCloudAuthClient(
+            domain: domain,
+            clientId: clientId,
+            redirectURL: redirectURL
+        )
+        self.init(authClient: authClient)
+    }
+
+    private init(authClient: SmbCloudAuthClient) {
+        self.authClient = authClient
+    }
+
+    /// The underlying headless engine, exposed for advanced/cross-cutting use.
+    public var client: SmbCloudAuthClient {
+        authClient
     }
 
     public func userInfo(accessToken: String, tenantId: String? = nil) async throws
         -> SmbCloudUserInfo
     {
-        try await userInfoClient.userInfo(accessToken: accessToken, tenantId: tenantId)
+        try await authClient.userInfo(accessToken: accessToken, tenantId: tenantId)
     }
 
     public func userInfo(session: SmbCloudSession, tenantId: String? = nil) async throws
         -> SmbCloudUserInfo
     {
-        try await userInfo(accessToken: session.accessToken, tenantId: tenantId)
+        try await authClient.userInfo(session: session, tenantId: tenantId)
     }
 
-    public func clearSession(credentialsManager: SmbCloudCredentialsManager? = nil) throws {
+    public func clearSession(credentialsManager: SmbCloudCredentialsStore? = nil) throws {
         try credentialsManager?.clear()
     }
 
-    public func logout(credentialsManager: SmbCloudCredentialsManager? = nil) throws {
+    public func logout(credentialsManager: SmbCloudCredentialsStore? = nil) throws {
         try clearSession(credentialsManager: credentialsManager)
     }
 }
@@ -75,21 +96,18 @@ public final class SmbCloudWebAuth: @unchecked Sendable {
             scopes: [String] = SmbCloudWebAuth.defaultScopes,
             audience: String? = nil,
             prefersEphemeralSession: Bool = false,
-            credentialsManager: SmbCloudCredentialsManager? = nil
+            credentialsManager: SmbCloudCredentialsStore? = nil
         ) async throws -> SmbCloudSession {
             guard activeAuthenticationSession == nil else {
                 throw SmbCloudClientError.loginInProgress
             }
 
-            let authorizationRequest = try client.authorizationRequest(
-                clientId: clientId,
-                redirectURL: redirectURL,
+            let authorizationRequest = try authClient.authorizationRequest(
                 scopes: scopes,
                 audience: audience
             )
 
-            let callbackScheme = redirectURL.scheme?.nilIfEmpty
-            guard let callbackScheme else {
+            guard let callbackScheme = authClient.callbackScheme else {
                 throw SmbCloudClientError.invalidRedirectURL(
                     "The redirect URL must include a callback scheme."
                 )
@@ -157,23 +175,11 @@ public final class SmbCloudWebAuth: @unchecked Sendable {
                 }
             }
 
-            let authorizationCode = try client.parseAuthorizationCode(
-                from: callbackURL,
-                expectedState: authorizationRequest.state
+            return try await authClient.exchangeCallback(
+                callbackURL,
+                authorizationRequest: authorizationRequest,
+                credentialsStore: credentialsManager
             )
-
-            let session = try await client.exchangeCode(
-                clientId: clientId,
-                redirectURL: redirectURL,
-                code: authorizationCode,
-                codeVerifier: authorizationRequest.codeVerifier
-            )
-
-            if let credentialsManager {
-                try credentialsManager.store(session)
-            }
-
-            return session
         }
 
         private static func authenticationError(from error: Error) -> SmbCloudClientError {

@@ -27,7 +27,7 @@ LOCAL_FFI_MARKER := $(LOCAL_DIR)/use-local-ffi
 LIB_NAME := libsmbcloud_auth.a
 SUPPORTED_PLATFORMS := ios macos tvos visionos
 
-.PHONY: help platform ios macos tvos visionos validate build-bindgen prepare generate-swift stage-framework activate-local-ffi deactivate-local-ffi clean verify verify-example verify-apple-destinations verify-apple-destination
+.PHONY: help platform ios macos tvos visionos validate build-bindgen prepare generate-swift stage-framework activate-local-ffi deactivate-local-ffi clean verify verify-example verify-linux verify-apple-destinations verify-apple-destination
 
 help:
 	@printf '%s\n' \
@@ -40,6 +40,7 @@ help:
 	  '  make visionos                Build smbcloud_authFFI.xcframework for visionOS device + simulator' \
 	  '  make verify                  Build + test the main Swift package and build the example app package' \
 	  '  make verify-example          Build the packaged macOS example app' \
+	  '  make verify-linux            Build + test the package on a non-Apple toolchain (AuthCore)' \
 	  '  make verify-apple-destinations  Build the public package for iOS, tvOS, and visionOS generic destinations' \
 	  '  make deactivate-local-ffi    Hide the optional local SmbCloudAuthFFI product' \
 	  '' \
@@ -48,7 +49,9 @@ help:
 	  '  Sources/SmbCloudAuthFFI/smbcloud_auth.swift (regenerated from the local Rust build)' \
 	  '' \
 	  'Notes:' \
-	  '  The public SmbCloudAuth product is pure Swift and always available.' \
+	  '  AuthCore is the cross-platform (Apple/Linux/Windows/Android) headless core.' \
+	  '  SmbCloudAuth is the Apple UI layer (hosted login + Keychain) on top of AuthCore.' \
+	  '  Both pure-Swift products build without local Rust artifacts.' \
 	  '  Local Rust/UniFFI builds enable the optional SmbCloudAuthFFI product.' \
 	  '' \
 	  'Optional overrides:' \
@@ -180,6 +183,13 @@ verify:
 
 verify-example:
 	swift build --package-path Examples/HostedLoginExample
+
+# Cross-platform check: AuthCore (and the rest of the package) must build and
+# test on non-Apple toolchains such as Linux, Windows, and Android.
+verify-linux:
+	swift build
+	swift build --target AuthCore
+	swift test
 
 verify-apple-destinations:
 	$(MAKE) verify-apple-destination PLATFORM=ios

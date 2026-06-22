@@ -66,7 +66,7 @@ extension SmbCloudSession {
         )
     }
 
-    func storedRepresentation() -> SmbCloudSession {
+    public func storedRepresentation() -> SmbCloudSession {
         SmbCloudSession(
             accessToken: accessToken,
             refreshToken: refreshToken?.nilIfEmpty,

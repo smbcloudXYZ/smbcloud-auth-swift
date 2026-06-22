@@ -19,10 +19,28 @@ let shouldEnableLocalFfi =
 
 let targets: [Target] = {
     var targets: [Target] = [
+        // Cross-platform core. Builds on Apple platforms, Linux, Windows, and
+        // Android. No UIKit/AppKit, AuthenticationServices, or Keychain.
+        .target(
+            name: "AuthCore",
+            dependencies: [
+                // CryptoKit is used on Apple platforms; swift-crypto provides the
+                // same SHA256 API everywhere else.
+                .product(
+                    name: "Crypto",
+                    package: "swift-crypto",
+                    condition: .when(platforms: [.linux, .windows, .android])
+                )
+            ],
+            path: "Sources/AuthCore"
+        ),
+        // Apple-platform UI layer: ASWebAuthenticationSession hosted login and
+        // the Keychain-backed credentials manager. Re-exports AuthCore.
         .target(
             name: "SmbCloudAuth",
+            dependencies: ["AuthCore"],
             path: "Sources/SmbCloudAuth"
-        )
+        ),
     ]
 
     if shouldEnableLocalFfi {
@@ -44,6 +62,14 @@ let targets: [Target] = {
 
     targets.append(
         .testTarget(
+            name: "AuthCoreTests",
+            dependencies: ["AuthCore"],
+            path: "Tests/AuthCoreTests"
+        )
+    )
+
+    targets.append(
+        .testTarget(
             name: "SmbCloudAuthTests",
             dependencies: ["SmbCloudAuth"],
             path: "Tests/SmbCloudAuthTests"
@@ -55,7 +81,8 @@ let targets: [Target] = {
 
 let products: [Product] = {
     var products: [Product] = [
-        .library(name: "SmbCloudAuth", targets: ["SmbCloudAuth"])
+        .library(name: "AuthCore", targets: ["AuthCore"]),
+        .library(name: "SmbCloudAuth", targets: ["SmbCloudAuth"]),
     ]
 
     if shouldEnableLocalFfi {
@@ -73,5 +100,11 @@ let package = Package(
         .iOS(.v16), .macOS(.v14), .tvOS(.v16), .visionOS(.v1),
     ],
     products: products,
+    dependencies: [
+        .package(
+            url: "https://github.com/apple/swift-crypto.git",
+            "3.0.0" ..< "5.0.0"
+        )
+    ],
     targets: targets
 )

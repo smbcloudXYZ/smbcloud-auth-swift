@@ -1,5 +1,16 @@
-import CryptoKit
 import Foundation
+
+#if canImport(FoundationNetworking)
+    // URLSession lives in FoundationNetworking on non-Apple Swift distributions (Linux, Windows, Android).
+    import FoundationNetworking
+#endif
+
+#if canImport(CryptoKit)
+    import CryptoKit
+#else
+    // swift-crypto provides the same SHA256 API on Linux, Windows, and Android.
+    import Crypto
+#endif
 
 internal struct SmbCloudOpenIDConnectAuthorizationRequest {
     let authorizeURL: URL

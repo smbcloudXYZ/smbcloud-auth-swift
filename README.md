@@ -18,20 +18,32 @@
 
 ---
 
-`smbcloud-auth-swift` is the Swift package for smbCloud Auth on Apple platforms.
+`smbcloud-auth-swift` is the Swift package for smbCloud Auth.
 
-It gives you:
+It ships **two products**:
 
-- `SmbCloudWebAuth`
+| Product | Platforms | What it's for |
+|---------|-----------|---------------|
+| **`AuthCore`** | Apple · Linux · Windows · Android | Headless, UI-free auth engine |
+| **`SmbCloudAuth`** | Apple only | Hosted login UI + Keychain on top of `AuthCore` |
+
+`AuthCore` gives you:
+
+- `SmbCloudAuthClient` — headless Authorization Code + PKCE engine
 - `SmbCloudSession`
-- `SmbCloudCredentialsManager`
-- `SmbCloudUserInfoClient`
+- `SmbCloudUserInfo` / `SmbCloudUserInfoClient`
+- `SmbCloudCredentialsStore` (protocol) + `SmbCloudInMemoryCredentialsStore`
+
+`SmbCloudAuth` adds the Apple UI/platform layer and re-exports `AuthCore`:
+
+- `SmbCloudWebAuth` — `ASWebAuthenticationSession` hosted login
+- `SmbCloudCredentialsManager` — Keychain-backed `SmbCloudCredentialsStore`
 
 The package is built for public clients:
 
 - Authorization Code + PKCE
-- `ASWebAuthenticationSession`
-- Keychain-backed local session storage
+- `ASWebAuthenticationSession` (Apple) or your own user agent (everywhere else)
+- pluggable session storage (Keychain on Apple, your choice elsewhere)
 - no shipped client secret
 
 ## Status
@@ -61,7 +73,18 @@ targets: [
 ]
 ```
 
-## Quick example
+For the cross-platform (Linux/Windows/Android) core, depend on `AuthCore`
+instead:
+
+```swift
+targets: [
+    .target(name: "MyApp", dependencies: [
+        .product(name: "AuthCore", package: "smbcloud-auth-swift")
+    ])
+]
+```
+
+## Quick example (Apple)
 
 ```swift
 import SmbCloudAuth
@@ -87,7 +110,38 @@ let user = try await webAuth.userInfo(session: session)
 print(user.email ?? "Signed in")
 ```
 
+## Quick example (cross-platform / headless)
+
+On Linux, Windows, Android, servers, or any place without
+`ASWebAuthenticationSession`, drive the user agent yourself and feed the
+callback URL back into `AuthCore`:
+
+```swift
+import AuthCore
+
+let client = try SmbCloudAuthClient(
+    domain: "api.smbcloud.xyz",
+    clientId: "your-public-client-id",
+    redirectURL: URL(string: "myapp://auth/callback")!
+)
+
+// 1. Build the PKCE request and open `request.authorizeURL` in a browser.
+let request = try client.authorizationRequest()
+
+// 2. After the redirect, hand the callback URL back to AuthCore.
+let session = try await client.exchangeCallback(callbackURL, authorizationRequest: request)
+
+// 3. Persist however you like (e.g. SmbCloudInMemoryCredentialsStore or your own store).
+let store = SmbCloudInMemoryCredentialsStore()
+try store.store(session)
+
+let user = try await client.userInfo(session: session)
+print(user.email ?? "Signed in")
+```
+
 ## Platforms
+
+`SmbCloudAuth` (hosted-login UI + Keychain):
 
 | Platform | Minimum |
 |----------|---------|
@@ -96,7 +150,9 @@ print(user.email ?? "Signed in")
 | tvOS     | 16.0    |
 | visionOS | 1.0     |
 
-Hosted web login currently runs on iOS, macOS, and visionOS. The session, storage, and user info helpers can still be used on other supported Apple platforms.
+Hosted web login (`SmbCloudWebAuth`) runs on iOS, macOS, and visionOS. The session, storage, and user info helpers can still be used on other supported Apple platforms.
+
+`AuthCore` (headless engine) additionally builds on **Linux, Windows, and Android**. It has no dependency on UIKit/AppKit, `AuthenticationServices`, or the Keychain, and uses [swift-crypto](https://github.com/apple/swift-crypto) for PKCE off Apple platforms. Bring your own `SmbCloudCredentialsStore` (or use `SmbCloudInMemoryCredentialsStore`) for persistence.
 
 ## Security note
 

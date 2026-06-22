@@ -1,156 +1,160 @@
-import Foundation
-import Security
+#if canImport(Security)
+    import AuthCore
+    import Foundation
+    import Security
 
-public enum SmbCloudCredentialsManagerError: Error, LocalizedError, Sendable {
-    case encodingFailed(String)
-    case decodingFailed(String)
-    case keychainOperationFailed(status: OSStatus, message: String)
+    public enum SmbCloudCredentialsManagerError: Error, LocalizedError, Sendable {
+        case encodingFailed(String)
+        case decodingFailed(String)
+        case keychainOperationFailed(status: OSStatus, message: String)
 
-    public var errorDescription: String? {
-        switch self {
-        case .encodingFailed(let message):
-            return message
-        case .decodingFailed(let message):
-            return message
-        case .keychainOperationFailed(_, let message):
-            return message
-        }
-    }
-}
-
-public struct SmbCloudCredentialsManager {
-    public let service: String
-    public let account: String
-    public let accessGroup: String?
-
-    public init(
-        service: String? = nil,
-        account: String = "current",
-        accessGroup: String? = nil
-    ) {
-        self.service = service?.nilIfEmpty ?? Self.defaultServiceName
-        self.account = account
-        self.accessGroup = accessGroup?.nilIfEmpty
-    }
-
-    public func store(_ session: SmbCloudSession) throws {
-        let encodedSession: Data
-        do {
-            encodedSession = try JSONEncoder().encode(session.storedRepresentation())
-        } catch {
-            throw SmbCloudCredentialsManagerError.encodingFailed(
-                "Failed to encode smbCloud session: \(error.localizedDescription)"
-            )
-        }
-
-        var addQuery = baseQuery()
-        addQuery[kSecValueData as String] = encodedSession
-        addSecureAccessibility(to: &addQuery)
-
-        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        switch addStatus {
-        case errSecSuccess:
-            return
-        case errSecDuplicateItem:
-            let attributesToUpdate = [
-                kSecValueData as String: encodedSession
-            ]
-            let updateStatus = SecItemUpdate(
-                baseQuery() as CFDictionary, attributesToUpdate as CFDictionary)
-            guard updateStatus == errSecSuccess else {
-                throw keychainError(for: updateStatus)
+        public var errorDescription: String? {
+            switch self {
+            case .encodingFailed(let message):
+                return message
+            case .decodingFailed(let message):
+                return message
+            case .keychainOperationFailed(_, let message):
+                return message
             }
-        default:
-            throw keychainError(for: addStatus)
         }
     }
 
-    public func current() throws -> SmbCloudSession? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
+    /// Keychain-backed ``SmbCloudCredentialsStore`` for Apple platforms.
+    ///
+    /// This type is only available where the `Security` framework exists
+    /// (iOS, macOS, tvOS, watchOS, visionOS). On other platforms, conform your
+    /// own type to ``SmbCloudCredentialsStore`` or use
+    /// ``SmbCloudInMemoryCredentialsStore`` from `AuthCore`.
+    public struct SmbCloudCredentialsManager: SmbCloudCredentialsStore {
+        public let service: String
+        public let account: String
+        public let accessGroup: String?
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        switch status {
-        case errSecSuccess:
-            guard let data = item as? Data else {
-                throw SmbCloudCredentialsManagerError.decodingFailed(
-                    "The keychain item did not contain valid session data."
-                )
-            }
+        public init(
+            service: String? = nil,
+            account: String = "current",
+            accessGroup: String? = nil
+        ) {
+            self.service = service?.smbCloudNilIfBlank ?? Self.defaultServiceName
+            self.account = account
+            self.accessGroup = accessGroup?.smbCloudNilIfBlank
+        }
 
+        public func store(_ session: SmbCloudSession) throws {
+            let encodedSession: Data
             do {
-                return try JSONDecoder().decode(SmbCloudSession.self, from: data)
-                    .storedRepresentation()
+                encodedSession = try JSONEncoder().encode(session.storedRepresentation())
             } catch {
-                throw SmbCloudCredentialsManagerError.decodingFailed(
-                    "Failed to decode smbCloud session: \(error.localizedDescription)"
+                throw SmbCloudCredentialsManagerError.encodingFailed(
+                    "Failed to encode smbCloud session: \(error.localizedDescription)"
                 )
             }
-        case errSecItemNotFound:
-            return nil
-        default:
-            throw keychainError(for: status)
+
+            var addQuery = baseQuery()
+            addQuery[kSecValueData as String] = encodedSession
+            addSecureAccessibility(to: &addQuery)
+
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            switch addStatus {
+            case errSecSuccess:
+                return
+            case errSecDuplicateItem:
+                let attributesToUpdate = [
+                    kSecValueData as String: encodedSession
+                ]
+                let updateStatus = SecItemUpdate(
+                    baseQuery() as CFDictionary, attributesToUpdate as CFDictionary)
+                guard updateStatus == errSecSuccess else {
+                    throw keychainError(for: updateStatus)
+                }
+            default:
+                throw keychainError(for: addStatus)
+            }
+        }
+
+        public func current() throws -> SmbCloudSession? {
+            var query = baseQuery()
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+            var item: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &item)
+            switch status {
+            case errSecSuccess:
+                guard let data = item as? Data else {
+                    throw SmbCloudCredentialsManagerError.decodingFailed(
+                        "The keychain item did not contain valid session data."
+                    )
+                }
+
+                do {
+                    return try JSONDecoder().decode(SmbCloudSession.self, from: data)
+                        .storedRepresentation()
+                } catch {
+                    throw SmbCloudCredentialsManagerError.decodingFailed(
+                        "Failed to decode smbCloud session: \(error.localizedDescription)"
+                    )
+                }
+            case errSecItemNotFound:
+                return nil
+            default:
+                throw keychainError(for: status)
+            }
+        }
+
+        public func clear() throws {
+            let status = SecItemDelete(baseQuery() as CFDictionary)
+            switch status {
+            case errSecSuccess, errSecItemNotFound:
+                return
+            default:
+                throw keychainError(for: status)
+            }
         }
     }
 
-    public func currentValidSession(leeway: TimeInterval = 60) throws -> SmbCloudSession? {
-        guard let session = try current() else {
-            return nil
+    extension SmbCloudCredentialsManager {
+        fileprivate static var defaultServiceName: String {
+            if let bundleIdentifier = Bundle.main.bundleIdentifier?.smbCloudNilIfBlank {
+                return "\(bundleIdentifier).smbcloud.auth"
+            }
+
+            return "xyz.smbcloud.auth"
         }
 
-        return session.isValid(leeway: leeway) ? session : nil
-    }
+        fileprivate func baseQuery() -> [String: Any] {
+            var query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
 
-    public func hasValidSession(leeway: TimeInterval = 60) throws -> Bool {
-        try currentValidSession(leeway: leeway) != nil
-    }
+            if let accessGroup {
+                query[kSecAttrAccessGroup as String] = accessGroup
+            }
 
-    public func clear() throws {
-        let status = SecItemDelete(baseQuery() as CFDictionary)
-        switch status {
-        case errSecSuccess, errSecItemNotFound:
-            return
-        default:
-            throw keychainError(for: status)
-        }
-    }
-}
-
-extension SmbCloudCredentialsManager {
-    fileprivate static var defaultServiceName: String {
-        if let bundleIdentifier = Bundle.main.bundleIdentifier?.nilIfEmpty {
-            return "\(bundleIdentifier).smbcloud.auth"
+            return query
         }
 
-        return "xyz.smbcloud.auth"
-    }
-
-    fileprivate func baseQuery() -> [String: Any] {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-
-        if let accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
+        fileprivate func addSecureAccessibility(to query: inout [String: Any]) {
+            #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+                query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            #endif
         }
 
-        return query
+        fileprivate func keychainError(for status: OSStatus) -> SmbCloudCredentialsManagerError {
+            let message =
+                SecCopyErrorMessageString(status, nil) as String?
+                ?? "Keychain operation failed with status \(status)."
+            return .keychainOperationFailed(status: status, message: message)
+        }
     }
 
-    fileprivate func addSecureAccessibility(to query: inout [String: Any]) {
-        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        #endif
+    extension String {
+        /// Module-local helper mirroring AuthCore's internal `nilIfEmpty`.
+        fileprivate var smbCloudNilIfBlank: String? {
+            trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
+        }
     }
-
-    fileprivate func keychainError(for status: OSStatus) -> SmbCloudCredentialsManagerError {
-        let message =
-            SecCopyErrorMessageString(status, nil) as String?
-            ?? "Keychain operation failed with status \(status)."
-        return .keychainOperationFailed(status: status, message: message)
-    }
-}
+#endif
