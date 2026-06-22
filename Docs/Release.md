@@ -7,16 +7,13 @@ The package is consumable directly from the Git tag.
 
 ## What gets released
 
-Public product:
+Public products (both pure Swift):
 
-- `SmbCloudAuth`
+- `AuthCore` — cross-platform headless engine
+- `SmbCloudAuth` — Apple UI layer on top of `AuthCore`
 
-Optional local development product:
-
-- `SmbCloudAuthFFI`
-
-`SmbCloudAuthFFI` is for sibling-repo development when you build the local Rust + UniFFI artifacts yourself.
-It is not required for normal package consumers.
+There is no Rust/UniFFI artifact to build or publish; the package is fully
+source-based.
 
 ## CI validation
 
@@ -61,17 +58,3 @@ Before tagging, run:
 make verify
 make verify-apple-destinations
 ```
-
-## Local optional FFI development
-
-If you are working alongside `smbcloud-cli`, you can generate the optional local UniFFI/XCFramework layer with:
-
-```bash
-make ios
-make macos
-make tvos
-make visionos
-```
-
-That enables the local `SmbCloudAuthFFI` product for development.
-The public release flow does not depend on those artifacts.
