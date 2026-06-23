@@ -1,5 +1,10 @@
-smbcloud_authFFI.xcframework/
-.local/
 .build/
+.local/
+.swiftpm/
 Examples/HostedLoginExample/.build/
 Examples/HostedLoginExample/.swiftpm/
+
+# Resolved dependency pins. This is a library (consumers ignore it) plus a demo
+# example, so committing it only adds churn — keep it out. (Pathless: matches the
+# root and the example's Package.resolved.)
+Package.resolved
