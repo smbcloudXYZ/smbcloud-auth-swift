@@ -165,6 +165,6 @@ platforms). Bring your own `SmbCloudCredentialsStore` (or use
 
 Apache 2.0. See [LICENSE](LICENSE).
 
----
+## Copyright
 
-© 2025 [smbCloud](https://smbcloud.xyz).
+© 2026 [Splitfire AB](https://5mb.app) ([smbCloud](https://smbcloud.xyz)).
