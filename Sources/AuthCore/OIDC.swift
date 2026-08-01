@@ -82,7 +82,7 @@ public enum OIDC {
 
         guard
             var components = URLComponents(
-                url: environment.baseURL.appendingPathComponent("oauth/authorize"),
+                url: environment.baseURL.appendingPathComponent("v1/client/oauth/authorize"),
                 resolvingAgainstBaseURL: false
             )
         else {
@@ -131,7 +131,8 @@ public enum OIDC {
         codeVerifier: String,
         session: URLSession = .shared
     ) async throws -> TokenResponse {
-        var request = URLRequest(url: environment.baseURL.appendingPathComponent("oauth/token"))
+        var request = URLRequest(
+            url: environment.baseURL.appendingPathComponent("v1/client/oauth/token"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -152,7 +153,8 @@ public enum OIDC {
         tenantId: String? = nil,
         session: URLSession = .shared
     ) async throws -> UserInfo {
-        var request = URLRequest(url: environment.baseURL.appendingPathComponent("oauth/userinfo"))
+        var request = URLRequest(
+            url: environment.baseURL.appendingPathComponent("v1/client/oauth/userinfo"))
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")

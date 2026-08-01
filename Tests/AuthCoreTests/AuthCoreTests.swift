@@ -115,7 +115,8 @@ final class AuthCoreTests: XCTestCase {
         let request = try OIDC.buildAuthorizationRequest(
             environment: .production, oidcClientId: "oidc-1", redirectURI: "myapp://auth/callback")
         let url = request.authorizeURL
-        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.path, "/oauth/authorize")
+        XCTAssertEqual(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.path, "/v1/client/oauth/authorize")
         XCTAssertEqual(query(url, "response_type"), "code")
         XCTAssertEqual(query(url, "code_challenge_method"), "S256")
         XCTAssertEqual(query(url, "client_id"), "oidc-1")
